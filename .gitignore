@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+*.zip
+output/
+index_cache/
+test_cache/
+.DS_Store

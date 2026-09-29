@@ -1,0 +1,3 @@
+Meridian Architecture Platform Release Notes
+Version 4.3.0
+- Optimized memory layout for neural inference kernels.

@@ -1,0 +1,4 @@
+Ticket ID,Severity,Summary,Fixed in Version
+ORR-1002,Low,UI refresh delay on telemetry tab,4.1.0
+ORR-1847,Critical,Thermal throttle engage bug during burst load,4.3.2
+ORR-2021,Medium,Clock synchronization drift on bus,4.2.1
