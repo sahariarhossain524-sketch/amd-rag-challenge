@@ -32,5 +32,5 @@ COPY app.py /app/app.py
 # Ensure standard evaluation directories exist
 RUN mkdir -p /app/corpus /app/output /app/index_cache
 
-# Default command
-CMD ["python3", "/app/app.py", "--help"]
+# Standard daemon command to keep container alive for docker exec
+CMD ["sleep", "infinity"]
