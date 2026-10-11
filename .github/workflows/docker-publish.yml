@@ -34,3 +34,4 @@ jobs:
             ghcr.io/sahariarhossain524-sketch/amd-rag-challenge:latest
             ghcr.io/sahariarhossain524-sketch/amd-rag-challenge:v3
             ghcr.io/sahariarhossain524-sketch/amd-rag-challenge:v4
+            ghcr.io/sahariarhossain524-sketch/amd-rag-challenge:v5
