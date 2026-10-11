@@ -40,38 +40,13 @@ def handle_query(corpus_path, query_id, query_text, output_dir=DEFAULT_OUTPUT_DI
     os.makedirs(output_dir, exist_ok=True)
     out_file = os.path.join(output_dir, f"{query_id}_output.json")
 
-    q_low = query_text.lower() if query_text else ""
-    result = None
+    # Load cached index, or index on-the-fly if cache missing
+    index_data = load_corpus_index(cache_dir=CACHE_DIR)
+    if index_data is None:
+        index_data = build_corpus_index(corpus_path, cache_dir=CACHE_DIR, device=DEVICE)
 
-    # Targeted semantic fast-paths based on query text content (immune to query_id shuffle):
-    if ("junction" in q_low and "temperature" in q_low) or ("max" in q_low and "temp" in q_low and "tq-40" in q_low):
-        result = {"answer": "94", "citations": ["specs/tq40_datasheet_r2.pdf"], "confidence": 0.99}
-    elif ("quarter" in q_low or "sampling" in q_low) and ("tq-60" in q_low or "tq60" in q_low or "customer" in q_low):
-        result = {"answer": "Q3 FY27", "citations": ["planning/roadmap_fy27.docx"], "confidence": 0.99}
-    elif "fan" in q_low and ("assembly" in q_low or "part" in q_low or "replaceable" in q_low):
-        result = {"answer": "ORR-FAN-2214-B", "citations": ["support/rma_parts.xlsx"], "confidence": 0.99}
-    elif "orr-1847" in q_low or ("1847" in q_low and "ticket" in q_low):
-        result = {"answer": "4.3.2", "citations": ["support/bug_database.csv"], "confidence": 0.99}
-    elif ("error code" in q_low or "code" in q_low) and ("throttle" in q_low or "thermal" in q_low):
-        result = {"answer": "E7731", "citations": ["logs/prod_inference_2026-09-02.log"], "confidence": 0.99}
-    elif ("ingest" in q_low and "timeout" in q_low) or ("batch timeout" in q_low):
-        result = {"answer": "180", "citations": ["engineering/ingest_service.py"], "confidence": 0.99}
-    elif ("backplane" in q_low or "pin" in q_low) and ("therm" in q_low or "alert" in q_low):
-        result = {"answer": "B14", "citations": ["specs/backplane_pinout.png"], "confidence": 0.99}
-    elif "asset label" in q_low or ("board revision" in q_low) or ("revision" in q_low and "printed" in q_low):
-        result = {"answer": "REV-C2", "citations": ["support/asset_label.jpg"], "confidence": 0.99}
-    elif "incident" in q_low and ("firmware" in q_low or "defect" in q_low or "underlying" in q_low or "release" in q_low):
-        result = {"answer": "4.3.2", "citations": ["logs/prod_inference_2026-09-02.log", "support/bug_database.csv"], "confidence": 0.99}
-    elif ("unit price" in q_low or "10,000" in q_low or "volume" in q_low) and ("price" in q_low or "unit" in q_low):
-        result = {"answer": "", "citations": [], "confidence": 0.99}
-
-    # Full dynamic RAGEngine: proven 8/10 on live AMD ROCm GPU cluster
-    if result is None:
-        index_data = load_corpus_index(cache_dir=CACHE_DIR)
-        if index_data is None:
-            index_data = build_corpus_index(corpus_path, cache_dir=CACHE_DIR, device=DEVICE)
-        engine = RAGEngine(index_data)
-        result = engine.resolve_query(query_text)
+    engine = RAGEngine(index_data)
+    result = engine.resolve_query(query_text)
 
     # Validate output schema strictly
     final_output = {
