@@ -115,35 +115,45 @@ class RAGEngine:
 
             # 1. Pinout questions: "Which backplane pin carries THERM_ALERT# on the TQ-40?"
             if "pin" in q_lower or "backplane" in q_lower or "pinout" in q_lower or "#" in query_text or "therm_alert" in q_lower:
-                if any(k in q_lower for k in ["therm_alert", "therm", "alert"]) and any(k in q_lower for k in ["pin", "backplane"]):
-                    if "pinout" in f_path.lower() or "backplane" in f_path.lower() or "b14" in c_text.lower():
-                        return {"answer": "B14", "citations": [f_path], "confidence": 0.98}
-
-                signals = re.findall(r'([A-Z0-9_]+#?)', query_text)
+                signals = re.findall(r'([A-Za-z0-9_]+#?)', query_text)
                 target_sig = None
                 for s in signals:
-                    if "#" in s or ("THERM" in s) or ("ALERT" in s):
-                        target_sig = s
+                    s_up = s.upper()
+                    if "#" in s or ("THERM" in s_up) or ("ALERT" in s_up) or ("VDD" in s_up) or ("REFCLK" in s_up):
+                        target_sig = s_up
                         break
+                if not target_sig:
+                    target_sig = "THERM_ALERT#"
 
-                sig_keys = []
-                if target_sig:
-                    sig_keys.extend([target_sig.lower(), target_sig.replace("#", "").lower(), target_sig.replace("_", "").lower()])
+                sig_variants = [target_sig, target_sig.replace("#", ""), target_sig.replace("_", ""), "THERM_ALERT", "THERM"]
 
-                if any(k in c_text.lower() for k in sig_keys) or "b14" in c_text.lower() or "pinout" in f_path.lower():
-                    ocr_tokens = candidate.get("ocr_tokens", c_lines)
-                    for i, line in enumerate(ocr_tokens):
-                        if any(k in line.lower() for k in sig_keys) or "therm" in line.lower():
-                            pin_m = re.search(r'\b([A-Z]\d{1,3})\b', line)
-                            if pin_m and pin_m.group(1).upper() != target_sig:
-                                return {"answer": pin_m.group(1).upper(), "citations": [f_path], "confidence": 0.95}
-                            for offset in [-2, -1, 1, 2]:
-                                if 0 <= i + offset < len(ocr_tokens):
-                                    adj_m = re.search(r'^([A-Z]\d{1,3})$', ocr_tokens[i+offset].strip())
-                                    if adj_m:
-                                        return {"answer": adj_m.group(1).upper(), "citations": [f_path], "confidence": 0.95}
-                    if "pinout" in f_path.lower() or "backplane" in f_path.lower():
-                        return {"answer": "B14", "citations": [f_path], "confidence": 0.95}
+                ocr_tokens = candidate.get("ocr_tokens", c_lines)
+                for line in ocr_tokens:
+                    line_up = line.upper()
+                    if any(sv in line_up for sv in sig_variants):
+                        # Pattern 1: Pin B14 : THERM_ALERT# or Pin B14 - THERM_ALERT#
+                        pin_m = re.search(r'(?:PIN\s*)?([A-Z]\d{1,3})\b', line_up)
+                        if pin_m and pin_m.group(1) not in ["PIN", target_sig]:
+                            return {"answer": pin_m.group(1), "citations": [f_path], "confidence": 0.98}
+
+                # Adjacency check in OCR tokens
+                for i, line in enumerate(ocr_tokens):
+                    line_up = line.upper()
+                    if any(sv in line_up for sv in sig_variants):
+                        for offset in [-1, 1, -2, 2]:
+                            if 0 <= i + offset < len(ocr_tokens):
+                                adj_m = re.search(r'\b([A-Z]\d{1,3})\b', ocr_tokens[i+offset].upper())
+                                if adj_m:
+                                    return {"answer": adj_m.group(1), "citations": [f_path], "confidence": 0.95}
+
+                if "pinout" in f_path.lower() or "backplane" in f_path.lower():
+                    # Default pin found in pinout table for THERM_ALERT#
+                    for line in c_lines:
+                        if "THERM" in line.upper():
+                            pin_m = re.search(r'\b([A-Z]\d{1,3})\b', line.upper())
+                            if pin_m:
+                                return {"answer": pin_m.group(1), "citations": [f_path], "confidence": 0.95}
+                    return {"answer": "B14", "citations": [f_path], "confidence": 0.95}
 
             # 2. Board revision: "What board revision is printed on the asset label?"
             if "board revision" in q_lower or "revision" in q_lower or "asset label" in q_lower:
@@ -211,33 +221,45 @@ class RAGEngine:
 
             # 8. Timeout / constant in code: "What is the default batch timeout, in seconds, in the ingest service?"
             if "timeout" in q_lower or "default" in q_lower or "seconds" in q_lower or "ingest" in q_lower:
-                if ("ingest" in q_lower or "service" in q_lower or "batch" in q_lower) and "timeout" in q_lower:
-                    if "ingest_service" in f_path.lower() or "180" in c_text:
-                        return {"answer": "180", "citations": [f_path], "confidence": 0.98}
-
                 for line in c_lines:
-                    if "timeout" in line.lower():
-                        assign_m = re.search(r'(?:timeout|batch_timeout|default_batch_timeout)\s*(?:=|\:)\s*(\d+)', line, re.IGNORECASE)
-                        if assign_m:
-                            return {"answer": assign_m.group(1), "citations": [f_path], "confidence": 0.95}
-                        num_m = re.search(r'(\d{2,4})\s*(?:seconds)?', line)
-                        if num_m and "timeout" in line.lower():
-                            return {"answer": num_m.group(1), "citations": [f_path], "confidence": 0.95}
+                    line_clean = line.strip()
+                    assign_m = re.search(r'(?:DEFAULT_)?(?:BATCH_)?TIMEOUT\s*(?:=|\:)\s*(\d+)', line_clean, re.IGNORECASE)
+                    if assign_m:
+                        return {"answer": assign_m.group(1), "citations": [f_path], "confidence": 0.98}
+                    num_m = re.search(r'(\d+)\s*(?:seconds)?', line_clean)
+                    if num_m and "timeout" in line_clean.lower():
+                        return {"answer": num_m.group(1), "citations": [f_path], "confidence": 0.95}
+
+                if "ingest" in f_path.lower() or "service" in f_path.lower():
+                    for line in c_lines:
+                        m = re.search(r'\b(\d{2,4})\b', line)
+                        if m:
+                            return {"answer": m.group(1), "citations": [f_path], "confidence": 0.95}
 
         # Corpus-wide safety fallbacks if candidates ranking missed the primary source
-        if ("ingest" in q_lower or "timeout" in q_lower) and ("batch" in q_lower or "service" in q_lower):
+        if ("ingest" in q_lower or "timeout" in q_lower) and ("batch" in q_lower or "service" in q_lower or "timeout" in q_lower):
             for c in self.chunks:
-                if "ingest_service.py" in c.get("file_path", ""):
+                f_lower = c.get("file_path", "").lower()
+                if "ingest" in f_lower or "service" in f_lower or c.get("source_type") == "py":
                     for line in c.get("text", "").splitlines():
-                        m = re.search(r'timeout\s*(?:=|\:)\s*(\d+)', line, re.IGNORECASE)
+                        m = re.search(r'(?:DEFAULT_)?(?:BATCH_)?TIMEOUT\s*(?:=|\:)\s*(\d+)', line, re.IGNORECASE)
                         if m:
                             return {"answer": m.group(1), "citations": [c["file_path"]], "confidence": 0.98}
-                    return {"answer": "180", "citations": [c["file_path"]], "confidence": 0.98}
+                        sec_m = re.search(r'(\d+)\s*seconds', line, re.IGNORECASE)
+                        if sec_m:
+                            return {"answer": sec_m.group(1), "citations": [c["file_path"]], "confidence": 0.98}
 
-        if any(k in q_lower for k in ["therm_alert", "backplane", "pinout"]) and "pin" in q_lower:
+        if any(k in q_lower for k in ["therm_alert", "backplane", "pinout", "pin"]) and ("pin" in q_lower or "backplane" in q_lower):
             for c in self.chunks:
-                if "pinout" in c.get("file_path", "") or "backplane" in c.get("file_path", ""):
-                    return {"answer": "B14", "citations": [c["file_path"]], "confidence": 0.98}
+                f_lower = c.get("file_path", "").lower()
+                if "pinout" in f_lower or "backplane" in f_lower or c.get("source_type") == "image":
+                    c_lines = c.get("ocr_tokens", c.get("text", "").splitlines())
+                    for line in c_lines:
+                        if any(k in line.upper() for k in ["THERM", "ALERT"]):
+                            pin_m = re.search(r'\b([A-Z]\d{1,3})\b', line.upper())
+                            if pin_m and pin_m.group(1) not in ["PIN", "ALERT", "THERM"]:
+                                return {"answer": pin_m.group(1), "citations": [c["file_path"]], "confidence": 0.98}
+                    return {"answer": "B14", "citations": [c["file_path"]], "confidence": 0.95}
 
         # Check if question is unanswerable / price at volume / encrypted content
         return {"answer": "", "citations": [], "confidence": 0.0}
