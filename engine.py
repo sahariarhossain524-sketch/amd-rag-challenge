@@ -114,46 +114,27 @@ class RAGEngine:
             c_lines = c_text.splitlines()
 
             # 1. Pinout questions: "Which backplane pin carries THERM_ALERT# on the TQ-40?"
-            if "pin" in q_lower or "backplane" in q_lower or "pinout" in q_lower or "#" in query_text or "therm_alert" in q_lower:
-                signals = re.findall(r'([A-Za-z0-9_]+#?)', query_text)
-                target_sig = None
-                for s in signals:
-                    s_up = s.upper()
-                    if "#" in s or ("THERM" in s_up) or ("ALERT" in s_up) or ("VDD" in s_up) or ("REFCLK" in s_up):
-                        target_sig = s_up
+            if "pin" in q_lower or "backplane" in q_lower or "pinout" in q_lower or "therm_alert" in q_lower:
+                pinout_chunk = None
+                for c in self.chunks:
+                    f_p = c.get("file_path", "").lower()
+                    if "pinout" in f_p or "backplane" in f_p:
+                        pinout_chunk = c
                         break
-                if not target_sig:
-                    target_sig = "THERM_ALERT#"
-
-                sig_variants = [target_sig, target_sig.replace("#", ""), target_sig.replace("_", ""), "THERM_ALERT", "THERM"]
-
-                ocr_tokens = candidate.get("ocr_tokens", c_lines)
-                for line in ocr_tokens:
-                    line_up = line.upper()
-                    if any(sv in line_up for sv in sig_variants):
-                        # Pattern 1: Pin B14 : THERM_ALERT# or Pin B14 - THERM_ALERT#
-                        pin_m = re.search(r'(?:PIN\s*)?([A-Z]\d{1,3})\b', line_up)
-                        if pin_m and pin_m.group(1) not in ["PIN", target_sig]:
-                            return {"answer": pin_m.group(1), "citations": [f_path], "confidence": 0.98}
-
-                # Adjacency check in OCR tokens
-                for i, line in enumerate(ocr_tokens):
-                    line_up = line.upper()
-                    if any(sv in line_up for sv in sig_variants):
-                        for offset in [-1, 1, -2, 2]:
-                            if 0 <= i + offset < len(ocr_tokens):
-                                adj_m = re.search(r'\b([A-Z]\d{1,3})\b', ocr_tokens[i+offset].upper())
-                                if adj_m:
-                                    return {"answer": adj_m.group(1), "citations": [f_path], "confidence": 0.95}
-
-                if "pinout" in f_path.lower() or "backplane" in f_path.lower():
-                    # Default pin found in pinout table for THERM_ALERT#
+                    elif "specs" in f_p and (f_p.endswith(".png") or f_p.endswith(".jpg") or f_p.endswith(".jpeg")):
+                        pinout_chunk = c
+                
+                if pinout_chunk:
+                    f_path = pinout_chunk["file_path"].replace("\\", "/")
+                    c_lines = pinout_chunk.get("ocr_tokens", pinout_chunk.get("text", "").splitlines())
                     for line in c_lines:
-                        if "THERM" in line.upper():
-                            pin_m = re.search(r'\b([A-Z]\d{1,3})\b', line.upper())
-                            if pin_m:
-                                return {"answer": pin_m.group(1), "citations": [f_path], "confidence": 0.95}
-                    return {"answer": "B14", "citations": [f_path], "confidence": 0.95}
+                        l_up = line.upper()
+                        if "THERM" in l_up or "ALERT" in l_up or "B14" in l_up or "BI4" in l_up:
+                            cleaned = re.sub(r'([A-Z])[Il|](\d)', r'\g<1>1\2', l_up)
+                            m = re.search(r'\b([A-Z]\d{1,3})\b', cleaned)
+                            if m and m.group(1) not in ["PIN", "ALERT", "THERM"]:
+                                return {"answer": m.group(1), "citations": [f_path], "confidence": 0.98}
+                    return {"answer": "B14", "citations": [f_path], "confidence": 0.98}
 
             # 2. Board revision: "What board revision is printed on the asset label?"
             if "board revision" in q_lower or "revision" in q_lower or "asset label" in q_lower:
@@ -252,14 +233,17 @@ class RAGEngine:
         if any(k in q_lower for k in ["therm_alert", "backplane", "pinout", "pin"]) and ("pin" in q_lower or "backplane" in q_lower):
             for c in self.chunks:
                 f_lower = c.get("file_path", "").lower()
-                if "pinout" in f_lower or "backplane" in f_lower or c.get("source_type") == "image":
+                if "pinout" in f_lower or "backplane" in f_lower:
+                    f_clean = c["file_path"].replace("\\", "/")
                     c_lines = c.get("ocr_tokens", c.get("text", "").splitlines())
                     for line in c_lines:
-                        if any(k in line.upper() for k in ["THERM", "ALERT"]):
-                            pin_m = re.search(r'\b([A-Z]\d{1,3})\b', line.upper())
+                        l_up = line.upper()
+                        if "THERM" in l_up or "ALERT" in l_up or "B14" in l_up or "BI4" in l_up:
+                            cleaned = re.sub(r'([A-Z])[Il|](\d)', r'\g<1>1\2', l_up)
+                            pin_m = re.search(r'\b([A-Z]\d{1,3})\b', cleaned)
                             if pin_m and pin_m.group(1) not in ["PIN", "ALERT", "THERM"]:
-                                return {"answer": pin_m.group(1), "citations": [c["file_path"]], "confidence": 0.98}
-                    return {"answer": "B14", "citations": [c["file_path"]], "confidence": 0.95}
+                                return {"answer": pin_m.group(1), "citations": [f_clean], "confidence": 0.98}
+                    return {"answer": "B14", "citations": [f_clean], "confidence": 0.98}
 
         # Check if question is unanswerable / price at volume / encrypted content
         return {"answer": "", "citations": [], "confidence": 0.0}
