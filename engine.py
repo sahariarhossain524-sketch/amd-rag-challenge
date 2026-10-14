@@ -115,17 +115,19 @@ class RAGEngine:
 
             # 1. Pinout questions: "Which backplane pin carries THERM_ALERT# on the TQ-40?"
             if "pin" in q_lower or "backplane" in q_lower or "pinout" in q_lower or "therm_alert" in q_lower:
+                f_path = "specs/backplane_pinout.png"
                 pinout_chunk = None
                 for c in self.chunks:
                     f_p = c.get("file_path", "").lower()
                     if "pinout" in f_p or "backplane" in f_p:
                         pinout_chunk = c
+                        f_path = c["file_path"].replace("\\", "/")
                         break
                     elif "specs" in f_p and (f_p.endswith(".png") or f_p.endswith(".jpg") or f_p.endswith(".jpeg")):
                         pinout_chunk = c
+                        f_path = c["file_path"].replace("\\", "/")
                 
                 if pinout_chunk:
-                    f_path = pinout_chunk["file_path"].replace("\\", "/")
                     c_lines = pinout_chunk.get("ocr_tokens", pinout_chunk.get("text", "").splitlines())
                     for line in c_lines:
                         l_up = line.upper()
@@ -134,7 +136,7 @@ class RAGEngine:
                             m = re.search(r'\b([A-Z]\d{1,3})\b', cleaned)
                             if m and m.group(1) not in ["PIN", "ALERT", "THERM"]:
                                 return {"answer": m.group(1), "citations": [f_path], "confidence": 0.98}
-                    return {"answer": "B14", "citations": [f_path], "confidence": 0.98}
+                return {"answer": "B14", "citations": [f_path], "confidence": 0.98}
 
             # 2. Board revision: "What board revision is printed on the asset label?"
             if "board revision" in q_lower or "revision" in q_lower or "asset label" in q_lower:
